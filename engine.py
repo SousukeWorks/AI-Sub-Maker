@@ -31,6 +31,9 @@ class Settings:
     soniox_model: str = "stt-async-v5"
     soniox_diarize: bool = True
     soniox_send_context: bool = True
+    soniox_split_enabled: bool = False
+    soniox_split_time: str = ""
+    soniox_second_song: str = ""
     deepseek: bool = False
     translate: bool = True
     deepseek_url: str = "https://api.deepseek.com"

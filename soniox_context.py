@@ -33,7 +33,7 @@ def interleave(groups):
         yield from (value for value in row if value is not None)
 
 
-def build_context(settings):
+def build_context(settings, *, stage=None):
     summary = {'enabled': bool(getattr(settings, 'soniox_send_context', True)), 'included': False,
                'stage': '', 'song_titles': 0, 'terms_sent': 0, 'terms_available': 0,
                'lyric_lines_sent': 0, 'lyric_lines_available': 0, 'lyrics_sampled': False,
@@ -43,7 +43,7 @@ def build_context(settings):
         return None, summary
     from lyric_context import stage_reference, describe_reference, ordered_text
     from member_terms import member_reference
-    stage = stage_reference(settings)
+    stage = stage if stage is not None else stage_reference(settings)
     reference = member_reference(settings)
     songs = stage['songs'] if stage else []
     titles = list(unique(song['title'] for song in songs))

@@ -160,7 +160,7 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
             zero_tokens += 1
             zero_text_tokens += bool(text.strip())
         speaker = row.get("speaker")
-        speaker_known = speaker is not None and str(speaker) != ""
+        speaker_known = speaker is not None and str(speaker) != "" and row.get('speaker_known', True)
         if speaker is None:
             speaker = group[-1]["speaker"] if group else groups[-1][-1]["speaker"] if groups else ""
         speaker = str(speaker)
@@ -309,7 +309,7 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
                       clause_splits=clause_splits,
                       sentences=[{'start': cue.start, 'end': cue.end, 'text': cue.text, 'speaker': cue.speaker,
                                   'token_indices': indices,
-                                  'speaker_known': all(tokens[i].get('speaker') not in (None, '') for i in indices
+                                  'speaker_known': all(tokens[i].get('speaker') not in (None, '') and tokens[i].get('speaker_known',True) for i in indices
                                                        if tokens[i]['text'].strip())}
                                  for cue, _, indices in parsed])
     return [cue for cue, _, _ in parsed]
@@ -380,14 +380,24 @@ def import_result(source, target, settings):
     return path, document
 
 
-def _signature(source, settings, base, *, legacy_context=''):
+def _signature(source, settings, base, *, legacy_context='', segment=None):
     stat = source.stat()
     value = [str(source.resolve()), stat.st_size, stat.st_mtime_ns, settings.audio_index,
              base, settings.soniox_model, settings.soniox_diarize, legacy_context]
+    if segment is not None:
+        value.append(segment)
     return hashlib.sha256(json.dumps(value, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def transcribe(source, target, settings, cancel, progress, log):
+    if settings.soniox_split_enabled:
+        from soniox_split import transcribe_parts
+        return transcribe_parts(source, target, settings, cancel, progress, log)
+    return _transcribe_single(source, target, settings, cancel, progress, log)
+
+
+def _transcribe_single(source, target, settings, cancel, progress, log, *, segment=None,
+                       context_stage=None, audio_provider=None, return_state=False):
     from lyrics import selected_stage
     selected_stage(settings)  # Reject an invalid library before any paid call.
     from sentence_context import allowed_pause
@@ -398,18 +408,20 @@ def transcribe(source, target, settings, cancel, progress, log):
     source, target = Path(source), Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     path = target.with_suffix(".soniox.json")
-    signature = _signature(source, settings, client.base)
+    signature = _signature(source, settings, client.base, segment=segment)
     with _lock(path):
         if path.exists():
             state = json.loads(path.read_text(encoding="utf-8-sig"))
             old_signature = _signature(source, settings, client.base,
-                                       legacy_context=getattr(settings, '_legacy_context_for_cache', ''))
+                                       legacy_context=getattr(settings, '_legacy_context_for_cache', ''), segment=segment)
             if state.get("schema") != 1 or state.get("signature") not in {signature, old_signature}:
                 raise ValueError("此输出的 Soniox 记录属于另一音频或识别设置，请选择新的 ASS 输出文件名。")
         else:
             state = {"schema": 1, "signature": signature, "reference": "jp-ass-" + uuid.uuid4().hex,
                      "status": "new", "source": str(source.resolve()), "model": settings.soniox_model,
                      "file_id": "", "job_id": ""}
+            if segment is not None:
+                state['segment'] = segment
 
         def save():
             atomic_write(path, json.dumps(state, ensure_ascii=False, indent=2, allow_nan=False))
@@ -426,20 +438,28 @@ def transcribe(source, target, settings, cancel, progress, log):
                     log("Soniox 本次云端资源清理未完成，可在控制台删除：" + redact_error(exc, settings))
 
         if state.get("status") == "completed":
-            cues, report = parsed_result(state, target, log, settings=settings)
+            cues = None if return_state else parsed_result(state, target, log, settings=settings)[0]
             log(f"复用已完成的 Soniox 结果，不再提交收费识别：{path}")
             log('识别上下文沿用原任务；当前词库与歌词提示仅对新识别任务生效。')
             cleanup()
-            return cues
+            return state if return_state else cues
         if state.get("status") in {"creating", "create_unknown"} and not state.get("job_id"):
             raise RuntimeError(f"上次收费任务提交结果不明，为避免重复收费已停止。请在 Soniox 控制台按 reference 核查；记录：{path}")
         if state.get("status") == "error":
             cleanup()
-            raise RuntimeError(f"Soniox 任务失败：{state.get('error', '')}。请检查控制台；新识别请选择新的输出文件名。")
+            if not return_state:
+                raise RuntimeError(f"Soniox 任务失败：{state.get('error', '')}。请检查控制台；新识别请选择新的输出文件名。")
+            state.setdefault('previous_failures', []).append({key: state.get(key) for key in
+                ('job_id','file_id','reference','error','recognition_context','recognition_context_summary')})
+            state.update(status='new', job_id='', file_id='', reference='jp-ass-'+uuid.uuid4().hex)
+            for key in ('job_id_deleted','file_id_deleted','error'):
+                state.pop(key,None)
+            save()
+            log('本次手动生成仅重新提交这段失败的识别；其他已完成段会复用。')
         check_cancel(cancel)
         if not state.get('job_id'):
             from soniox_context import build_context, describe
-            context, summary = build_context(settings)
+            context, summary = build_context(settings, stage=context_stage)
             state['recognition_context'] = context
             state['recognition_context_summary'] = summary
             save()
@@ -447,18 +467,27 @@ def transcribe(source, target, settings, cancel, progress, log):
         else:
             log('继续已有 Soniox 任务，识别上下文沿用提交时的内容。')
         if not state.get("file_id"):
-            temp_root = audio_temp_dir(settings) or target.parent
-            with tempfile.TemporaryDirectory(prefix="jp-ass-soniox-", dir=temp_root) as temp:
-                audio = Path(temp) / "audio.flac"
-                log("正在提取所选音轨为 FLAC，保留视频时间偏移……")
-                state["duration"] = extract_flac(source, audio, settings.audio_index, cancel, lambda p: progress(.02 + p * .13))
+            if audio_provider is not None:
+                audio, state['duration'] = audio_provider()
                 check_cancel(cancel)
-                log(f"上传 {state['duration']:.1f} 秒音频到 Soniox（付费识别）……")
-                with audio.open("rb") as stream:
-                    result = client.request("POST", "files", upload=Multipart(stream, cancel))
-                state["file_id"] = valid_id(result.get("id"))
-                state["status"] = "uploaded"
-                save()  # Save before noticing cancellation after a POST.
+                log(f"上传本段 {state['duration']:.1f} 秒音频到 Soniox（付费识别）……")
+                with Path(audio).open('rb') as stream:
+                    result = client.request('POST', 'files', upload=Multipart(stream, cancel))
+                state.update(file_id=valid_id(result.get('id')), status='uploaded')
+                save()
+            else:
+                temp_root = audio_temp_dir(settings) or target.parent
+                with tempfile.TemporaryDirectory(prefix="jp-ass-soniox-", dir=temp_root) as temp:
+                    audio = Path(temp) / "audio.flac"
+                    log("正在提取所选音轨为 FLAC，保留视频时间偏移……")
+                    state["duration"] = extract_flac(source, audio, settings.audio_index, cancel, lambda p: progress(.02 + p * .13))
+                    check_cancel(cancel)
+                    log(f"上传 {state['duration']:.1f} 秒音频到 Soniox（付费识别）……")
+                    with audio.open("rb") as stream:
+                        result = client.request("POST", "files", upload=Multipart(stream, cancel))
+                    state["file_id"] = valid_id(result.get("id"))
+                    state["status"] = "uploaded"
+                    save()  # Save before noticing cancellation after a POST.
         check_cancel(cancel)
         if not state.get("job_id"):
             body = {"model": settings.soniox_model, "file_id": valid_id(state["file_id"]),
@@ -508,6 +537,11 @@ def transcribe(source, target, settings, cancel, progress, log):
         # Save raw native tokens before parsing or deleting cloud resources.
         state.update(status="completed", transcript=transcript)
         save()
+        if return_state:
+            cleanup()
+            check_cancel(cancel)
+            progress(.78)
+            return state
         cues, report = parsed_result(state, target, log, settings=settings)
         state["cues"] = [asdict(cue) for cue in cues]
         save()

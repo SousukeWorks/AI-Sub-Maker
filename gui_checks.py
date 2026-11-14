@@ -98,6 +98,13 @@ def check_layouts():
                 button = window.soniox_context_button
                 x = button.winfo_rootx() - canvas.winfo_rootx()
                 y = button.winfo_rooty() - canvas.winfo_rooty()
+                for control in (window.split_panel.enabled,window.split_panel.time_entry,window.split_panel.song_picker):
+                    window.scroll_area.ensure_visible(control)
+                    window.update()
+                    cx=control.winfo_rootx()-canvas.winfo_rootx()
+                    cy=control.winfo_rooty()-canvas.winfo_rooty()
+                    assert 0<=cx and cx+control.winfo_width()<=canvas.winfo_width(),('split clipping',percent,width)
+                    assert -2<=cy and cy+control.winfo_height()<=canvas.winfo_height()+2,('split clipping',percent,height)
                 assert button.winfo_ismapped() and 0 <= x and x + button.winfo_width() <= canvas.winfo_width()
                 assert -2 <= y and y + button.winfo_height() <= canvas.winfo_height() + 2
                 panel = window.retry_panel

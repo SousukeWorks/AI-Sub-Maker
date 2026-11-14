@@ -32,22 +32,29 @@ def fake_soniox(options=None):
                 self.reply(200, {"models": [{"id": "stt-async-v5"}]})
             elif self.command == "POST" and self.path == "/v1/files":
                 assert b'filename="audio.flac"' in body and b"fLaC" in body
-                self.reply(201, {"id": "file-test"})
+                number=sum(method=='POST' and route=='/v1/files' for method,route,_ in calls)
+                self.reply(201, {"id": f'file-test-{number}' if options.get('segmented') else "file-test"})
             elif self.command == "POST" and self.path == "/v1/transcriptions":
                 if options.get("on_create"):
                     options["on_create"]()
-                self.reply(options.get("create_status", 201), {"id": "job-test"})
-            elif self.command == "GET" and self.path == "/v1/transcriptions/job-test":
-                self.reply(options.get("poll_http", 200), {"status": options.get("status", "completed"), "error_message": "offline failure"})
+                number=sum(method=='POST' and route=='/v1/transcriptions' for method,route,_ in calls)
+                status=options.get('create_statuses',{}).get(number,options.get('create_status',201))
+                self.reply(status, {"id": f'job-test-{number}' if options.get('segmented') else "job-test"})
+            elif self.command == "GET" and (self.path == "/v1/transcriptions/job-test" or options.get('segmented') and self.path.startswith('/v1/transcriptions/job-test-') and not self.path.endswith('/transcript')):
+                number=int(self.path.rsplit('-',1)[-1]) if options.get('segmented') else 1
+                status=options.get('poll_statuses',{}).get(number,options.get('status','completed'))
+                error=options.get('error_message','offline failure')
+                self.reply(options.get("poll_http", 200), {"status": status, "error_message": error})
             elif self.command == "GET" and self.path.endswith("/transcript"):
-                self.reply(200, {"tokens": TOKENS})
-            elif self.command == "DELETE" and self.path in {"/v1/transcriptions/job-test", "/v1/files/file-test"}:
+                number=int(self.path.removesuffix('/transcript').rsplit('-',1)[-1]) if options.get('segmented') else 1
+                self.reply(200, {"tokens": options.get('tokens_by_job',{}).get(number,TOKENS)})
+            elif self.command == "DELETE" and (self.path in {"/v1/transcriptions/job-test", "/v1/files/file-test"} or options.get('segmented') and self.path.startswith(('/v1/transcriptions/job-test-','/v1/files/file-test-'))):
                 self.reply(options.get("delete_status", 204), {})
             elif self.command == "POST" and self.path == "/v1/chat/completions":
                 inputs = json.loads(body["messages"][1]["content"])["subtitles"]
                 count = sum(route == "/v1/chat/completions" for _, route, _ in calls)
                 rows = [{"id": row["id"], "japanese": row["text"], "chinese": "中文" + str(row["id"])} for row in inputs]
-                if count == 1:
+                if count == 1 and not options.get('complete_translation'):
                     rows[-1].pop("chinese")
                 from workflow_checks import response
                 self.reply(200, response(rows))

@@ -95,3 +95,47 @@ def extract_flac(source: Path, target: Path, audio_index: int, cancel, progress)
     if not frames:
         raise ValueError("音轨为空，无法解码语音")
     return frames / RATE
+
+
+def extract_flac_parts(source, targets, split_seconds, audio_index, cancel, progress):
+    """Decode once, partition exact samples, and give each FLAC its own clock."""
+    from contextlib import ExitStack
+    import math
+    import av
+    import numpy as np
+
+    if len(targets) != 2 or not math.isfinite(split_seconds) or split_seconds <= 0:
+        raise ValueError('请填写有效的分段时间')
+    boundary = round(split_seconds * RATE)
+    if boundary <= 0:
+        raise ValueError('分段时间必须大于零')
+    _, duration = audio_info(source)
+    if duration and boundary / RATE >= duration:
+        raise ValueError('分段时间必须早于音视频结束时间')
+    counts, total = [0, 0], 0
+    with ExitStack() as stack:
+        outputs = [stack.enter_context(av.open(str(path), 'w', format='flac')) for path in targets]
+        streams = [output.add_stream('flac', rate=RATE) for output in outputs]
+        for stream in streams:
+            stream.layout = 'mono'
+        for block in pcm_blocks(source, audio_index, cancel):
+            samples = np.frombuffer(block, dtype=np.int16)
+            cut = max(0, min(len(samples), boundary-total))
+            for index, part in enumerate((samples[:cut], samples[cut:])):
+                if not len(part):
+                    continue
+                frame = av.AudioFrame.from_ndarray(part.reshape(1,-1), format='s16', layout='mono')
+                frame.sample_rate, frame.pts = RATE, counts[index]
+                counts[index] += len(part)
+                if counts[index] > 300 * 60 * RATE:
+                    raise ValueError('每段 Soniox 音频不能超过 300 分钟，请调整分段时间')
+                for packet in streams[index].encode(frame):
+                    outputs[index].mux(packet)
+            total += len(samples)
+            progress(min(.99,total/RATE/duration) if duration else 0)
+        for output, stream in zip(outputs, streams):
+            for packet in stream.encode(None):
+                output.mux(packet)
+    if not all(counts):
+        raise ValueError('分段时间超出实际音轨范围，必须让两段音频都有内容')
+    return [count / RATE for count in counts]

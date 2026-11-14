@@ -28,4 +28,4 @@ def ordered_text(reference):
     if not reference:
         return ''
     return '\n\n'.join(f'[{index:02d} {song["title"]}]\n{song["japanese"]}'
-                       for index, song in enumerate(reference['songs'], 1) if song['japanese'].strip())
+                       for index, song in enumerate(reference['songs'], reference.get('first_song_number', 1)) if song['japanese'].strip())

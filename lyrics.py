@@ -277,7 +277,7 @@ def apply_to_tokens(payload, duration, settings, *, cancel=None):
         reference = {key: match[key] for key in ('stage', 'stage_id', 'song', 'song_id', 'line', 'line_end', 'japanese', 'chinese', 'score')}
         cues.append(Cue(match['start'], match['end'], clean_start(match['japanese']),
                         speaker=next(iter(speakers)) if len(speakers) == 1 else '', lyric=reference))
-        trusted[id(cues[-1])] = all(token.get('speaker') not in (None, '') for token in span if token['text'].strip())
+        trusted[id(cues[-1])] = all(token.get('speaker') not in (None, '') and token.get('speaker_known',True) for token in span if token['text'].strip())
         match['recognized'] = ''.join(token['text'] for token in span)
         cursor = match['last'] + 1
     remaining(cursor, len(tokens))

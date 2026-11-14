@@ -20,7 +20,7 @@ from ui import ScrollArea
 from retry_ui import RetryPanel
 from subtitle_jobs import ProcessingIncomplete, load_job, process_job, record_path, redact_error
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 
 class App(tk.Tk):
@@ -175,6 +175,9 @@ class App(tk.Tk):
         self.soniox_context_button = ttk.Checkbutton(recognition, text='发送歌词和词库作为识别上下文', variable=self.vars['soniox_send_context'])
         self.soniox_context_button.grid(row=12, column=0, columnspan=2, sticky='w', pady=5)
         ttk.Label(recognition, text='新识别按公演顺序发送完整日文歌词，保留 RAP、重复段落，并提供歌名、英文词和日文词库。\n不抽样或截断；Soniox 上限为 8000 tokens，服务端若拒绝超限会报错。DeepSeek 同样收到完整歌词。', style='Hint.TLabel', wraplength=780).grid(row=13, column=0, columnspan=2, sticky='w', pady=5)
+        from split_ui import SplitPanel
+        self.split_panel = SplitPanel(recognition,self)
+        self.split_panel.grid(row=14,column=0,columnspan=2,sticky='ew',pady=(8,0))
 
         ttk.Checkbutton(correction, text="生成日中双语 ASS（DeepSeek 翻译）", variable=self.vars["translate"]).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
         ttk.Checkbutton(correction, text="同时校正日语错字和标点", variable=self.vars["deepseek"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 8))
@@ -238,6 +241,8 @@ class App(tk.Tk):
         except Exception as exc:
             self._stages = []
             self.stage_hint.configure(text='歌词库无法加载：' + str(exc))
+        if hasattr(self,'split_panel'):
+            self.split_panel.refresh()
 
     def select_stage(self, _event=None):
         index = self.stage_picker.current()
@@ -403,6 +408,9 @@ class App(tk.Tk):
         settings = Settings(**values)
         from lyrics import selected_stage
         selected_stage(settings)
+        if settings.soniox_split_enabled:
+            from soniox_split import split_plan
+            split_plan(settings)
         from member_terms import member_reference
         member_reference(settings)
         from member_colors import export_palette
@@ -512,6 +520,7 @@ class App(tk.Tk):
 
     def set_busy(self, busy):
         self.busy = busy
+        self.split_panel.refresh_state()
         self.start_button.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if busy else "disabled")
         self.retry_panel.set_busy(busy)
