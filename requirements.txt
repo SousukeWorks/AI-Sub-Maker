@@ -1,4 +1,0 @@
-av==19.0.1
-numpy==2.5.4
-requests==2.34.2
-Janome==0.5.1
