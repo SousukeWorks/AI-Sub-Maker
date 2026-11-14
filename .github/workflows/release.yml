@@ -65,6 +65,7 @@ jobs:
               f'下载 **AI-Sub-Maker-{version}-Windows11-x64.zip**，完整解压后运行 '
               '**AI-Sub-Maker.exe**，保留旁边的 `_internal` 文件夹。无需安装 Python。\n\n'
               '- Soniox 日语识别与词级时间轴，DeepSeek 整批校对和简体中文翻译。\n'
+              '- 新识别支持发送所选歌词摘录、歌名、英文词及日文词库作为 Soniox 上下文。\n'
               '- 上日语、下中文，各占一行；支持失败重试、词库与成员 / 合唱配色。\n'
               '- MP3＋图片生成 MP4，可独立使用。\n\n'
               'Soniox / DeepSeek 需自行填写 API Key，并按各自服务收费。'

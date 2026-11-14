@@ -410,6 +410,7 @@ def transcribe(source, target, settings, cancel, progress, log):
         if state.get("status") == "completed":
             cues, report = parsed_result(state, target, log, settings=settings)
             log(f"复用已完成的 Soniox 结果，不再提交收费识别：{path}")
+            log('识别上下文沿用原任务；当前词库与歌词提示仅对新识别任务生效。')
             cleanup()
             return cues
         if state.get("status") in {"creating", "create_unknown"} and not state.get("job_id"):
@@ -418,6 +419,15 @@ def transcribe(source, target, settings, cancel, progress, log):
             cleanup()
             raise RuntimeError(f"Soniox 任务失败：{state.get('error', '')}。请检查控制台；新识别请选择新的输出文件名。")
         check_cancel(cancel)
+        if not state.get('job_id'):
+            from soniox_context import build_context, describe
+            context, summary = build_context(settings)
+            state['recognition_context'] = context
+            state['recognition_context_summary'] = summary
+            save()
+            log(describe(summary))
+        else:
+            log('继续已有 Soniox 任务，识别上下文沿用提交时的内容。')
         if not state.get("file_id"):
             temp_root = audio_temp_dir(settings) or target.parent
             with tempfile.TemporaryDirectory(prefix="jp-ass-soniox-", dir=temp_root) as temp:
@@ -437,6 +447,8 @@ def transcribe(source, target, settings, cancel, progress, log):
                     "language_hints": ["ja"], "enable_language_identification": True,
                     "enable_speaker_diarization": settings.soniox_diarize,
                     "client_reference_id": state["reference"]}
+            if state.get('recognition_context'):
+                body['context'] = state['recognition_context']
             state["status"] = "creating"
             save()
             try:

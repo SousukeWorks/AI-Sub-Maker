@@ -178,3 +178,75 @@ def run_soniox_gui_check(folder):
                         "zero_duration_json_import_without_asr": True}
             finally:
                 window.destroy()
+
+
+def run_soniox_context_check(folder):
+    """Exercise the GUI through the actual HTTP payload with no live API."""
+    import time
+    import config
+    from app import App
+    from diagnostics import create_fixture
+    from engine import Settings
+    from lyrics import save_library
+    from member_catalog import initial_members
+    from member_terms import save_library as save_members
+    from soniox_asr import transcribe
+    from soniox_context import MAX_CONTEXT_BYTES, context_size
+
+    folder = folder.resolve()
+    library, members = folder / 'context-lyrics.json', folder / 'context-members.json'
+    lyric_data = {'schema': 1, 'stages': [{'id': 'context-stage', 'name': '識別テスト', 'songs': [
+        {'id': 'context-song', 'title': 'Context song', 'japanese': 'Maybe\nこれは歌詞の例です。\n次の歌詞も参考です。', 'chinese': ''}]}]}
+    save_library(lyric_data, str(library))
+    save_members(initial_members(), str(members))
+    source, target = folder / 'context-source.mp4', folder / 'context-output.ass'
+    create_fixture(source)
+    with fake_soniox() as (base, calls):
+        settings = Settings(translate=False, soniox_url=base, soniox_key='offline-soniox-key',
+                            lyric_stage='context-stage', lyrics_library=str(library), member_library=str(members))
+        with patch.object(config, 'load', return_value=(settings, False, '')), patch.object(config, 'save'), \
+                patch('app.messagebox.showinfo'), patch('app.messagebox.showerror') as error:
+            window = App(start_maximized=False)
+            try:
+                window.update()
+                window.withdraw()
+                assert window.vars['soniox_send_context'].get()
+                window.soniox_context_button.invoke()
+                assert not window.vars['soniox_send_context'].get()
+                window.soniox_context_button.invoke()
+                window.source.set(str(source))
+                window.target.set(str(target))
+                window.start_button.invoke()
+                deadline = time.monotonic() + 20
+                while window.busy and time.monotonic() < deadline:
+                    window.update()
+                    time.sleep(.01)
+                window.update()
+                assert not window.busy and not error.called, error.call_args
+            finally:
+                window.destroy()
+        requests = [body for method, route, body in calls if method == 'POST' and route == '/v1/transcriptions']
+        assert len(requests) == 1
+        context = requests[0]['context']
+        assert 'Maybe' in context['terms'] and '岩立沙穂' in context['terms'] and 'さっほー' in context['terms']
+        assert 'これは歌詞の例です' in context['text'] and context_size(context) <= MAX_CONTEXT_BYTES
+        state_path = target.with_suffix('.soniox.json')
+        state = json.loads(state_path.read_text('utf-8-sig'))
+        assert state['recognition_context'] == context
+        assert state['recognition_context_summary']['terms_sent'] == len(context['terms'])
+        assert 'offline-soniox-key' not in state_path.read_text('utf-8-sig')
+        before = len(calls)
+        lyric_data['stages'][0]['songs'][0]['japanese'] = 'ChangedWord\n異なる歌詞の例です。'
+        save_library(lyric_data, str(library))
+        messages = []
+        transcribe(source, target, settings, threading.Event(), lambda _: None, messages.append)
+        assert len(calls) == before
+        assert json.loads(state_path.read_text('utf-8-sig'))['recognition_context'] == context
+        assert any('仅对新识别任务生效' in message for message in messages)
+        settings.soniox_send_context = False
+        transcribe(source, folder / 'context-disabled.ass', settings, threading.Event(), lambda _: None, lambda _: None)
+        requests = [body for method, route, body in calls if method == 'POST' and route == '/v1/transcriptions']
+        assert len(requests) == 2 and 'context' not in requests[-1]
+    return {'context_sent_in_paid_request': True, 'stage_lyrics_and_wordbook': True,
+            'gui_toggle_to_http': True, 'saved_snapshot_matches_request': True,
+            'bounded_context': True, 'no_automatic_paid_resubmission': True, 'disable_omits_context': True}

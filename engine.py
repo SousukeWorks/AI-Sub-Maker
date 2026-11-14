@@ -30,6 +30,7 @@ class Settings:
     soniox_key: str = ""
     soniox_model: str = "stt-async-v5"
     soniox_diarize: bool = True
+    soniox_send_context: bool = True
     deepseek: bool = False
     translate: bool = True
     deepseek_url: str = "https://api.deepseek.com"

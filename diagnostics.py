@@ -94,9 +94,10 @@ def smoke_test(report: Path):
             results["ass_utf8"] = "ok"
             from workflow_checks import run_workflow_check
             results["combined_request_and_selective_retry"] = run_workflow_check(folder)
-            from soniox_checks import run_soniox_check, run_soniox_gui_check
+            from soniox_checks import run_soniox_check, run_soniox_gui_check, run_soniox_context_check
             results["soniox_native_timing_and_bilingual_retry"] = run_soniox_check(folder)
             results["soniox_default_gui"] = run_soniox_gui_check(folder)
+            results['soniox_recognition_context'] = run_soniox_context_check(folder)
             from image_video_checks import run_mp3_image_check, run_standalone_gui_check
             results["mp3_and_image_mp4"] = run_mp3_image_check(folder)
             results["independent_mp3_picture_gui"] = run_standalone_gui_check(folder)

@@ -20,7 +20,7 @@ from ui import ScrollArea
 from retry_ui import RetryPanel
 from subtitle_jobs import ProcessingIncomplete, load_job, process_job, record_path, redact_error
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 class App(tk.Tk):
@@ -172,6 +172,9 @@ class App(tk.Tk):
         self.natural_button.grid(row=9, column=0, columnspan=2, sticky='w', pady=(10, 5))
         self.field(recognition, 10, "长停顿提示（秒）", "continuation_pause", spin=(.5, 3))
         ttk.Label(recognition, text="句号、问号结束句子；句内按逗号、顿号、分号划分可读语段。语气词带到后文，词尾接回前文；各语段保留原生时间，结合上下文逐段校对翻译。", style="Hint.TLabel", wraplength=780).grid(row=11, column=0, columnspan=2, sticky='w', pady=5)
+        self.soniox_context_button = ttk.Checkbutton(recognition, text='发送歌词和词库作为识别上下文', variable=self.vars['soniox_send_context'])
+        self.soniox_context_button.grid(row=12, column=0, columnspan=2, sticky='w', pady=5)
+        ttk.Label(recognition, text='新识别会向 Soniox 提供所选公演的歌名、歌词摘录、英文词，以及已启用的日文人名、昵称和专有词。\n较长资料按容量选取，日志显示实际发送数量；这是识别辅助，仍需后续校对。', style='Hint.TLabel', wraplength=780).grid(row=13, column=0, columnspan=2, sticky='w', pady=5)
 
         ttk.Checkbutton(correction, text="生成日中双语 ASS（DeepSeek 翻译）", variable=self.vars["translate"]).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
         ttk.Checkbutton(correction, text="同时校正日语错字和标点", variable=self.vars["deepseek"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 8))

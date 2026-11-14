@@ -41,6 +41,7 @@ def main():
     entries = pack(binary, [p for p in folder.rglob("*") if include(p)], release)
     source = dist / f"AI-Sub-Maker-{VERSION}-source.zip"
     files = [p for p in root.iterdir() if p.is_file() and (p.suffix in {".py", ".md", ".txt", ".ps1", ".bat", ".spec"} or p.name in {'.gitignore', '.gitattributes'})]
+    files += [p for p in (root / '.github').rglob('*') if p.is_file() and p.suffix in {'.yml', '.yaml'}]
     pack(source, files, root.parent)
     artifacts = []
     for path in (binary, source, folder / "AI-Sub-Maker.exe"):

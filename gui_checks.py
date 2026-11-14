@@ -93,6 +93,13 @@ def check_layouts():
                 button = window.soniox_test_button
                 y = button.winfo_rooty() - canvas.winfo_rooty()
                 assert -2 <= y and y + button.winfo_height() <= canvas.winfo_height() + 2
+                window.scroll_area.ensure_visible(window.soniox_context_button)
+                window.update()
+                button = window.soniox_context_button
+                x = button.winfo_rootx() - canvas.winfo_rootx()
+                y = button.winfo_rooty() - canvas.winfo_rooty()
+                assert button.winfo_ismapped() and 0 <= x and x + button.winfo_width() <= canvas.winfo_width()
+                assert -2 <= y and y + button.winfo_height() <= canvas.winfo_height() + 2
                 panel = window.retry_panel
                 with tempfile.TemporaryDirectory() as directory:
                     path, document = create_job(None, Path(directory) / "retry.ass", [Cue(0, 1, "日语一"), Cue(2, 3, "日语二")], Settings(deepseek=True))

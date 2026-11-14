@@ -73,7 +73,7 @@ class CloudOnlyTests(unittest.TestCase):
                 self.assertEqual(len(transcribe(*args)), 2)
                 self.assertEqual(len(calls), before)
                 body = next(body for method, route, body in calls if method == 'POST' and route == '/v1/transcriptions')
-                self.assertNotIn('context', body)
+                self.assertNotIn('旧词条', json.dumps(body, ensure_ascii=False))
                 self.assertNotIn('prompt', asdict(settings))
 
     def test_removed_local_cli_flag_cannot_launch_a_model(self):
