@@ -1,0 +1,65 @@
+name: Clear repository at owner request
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/clear-repository.yml']
+permissions:
+  contents: write
+jobs:
+  clear:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - name: Remove published releases and tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -ne 'SousukeWorks/AI-Sub-Maker') { throw 'Unexpected repository' }
+          $releaseIds = @(gh api "repos/$env:GITHUB_REPOSITORY/releases" --paginate --jq '.[].id')
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to list releases' }
+          foreach ($releaseId in $releaseIds) {
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$releaseId"
+            if ($LASTEXITCODE -ne 0) { throw 'Release removal failed' }
+          }
+          $tagNames = @(gh api "repos/$env:GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to list tags' }
+          foreach ($tagName in $tagNames) {
+            $encodedTag = [System.Uri]::EscapeDataString($tagName)
+            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$encodedTag"
+            if ($LASTEXITCODE -ne 0) { throw 'Tag removal failed' }
+          }
+      - name: Empty the current repository tree
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -ne 'SousukeWorks/AI-Sub-Maker') { throw 'Unexpected repository' }
+          git fetch origin main
+          if ($LASTEXITCODE -ne 0) { throw 'Fetch failed' }
+          $currentHead = (& git rev-parse FETCH_HEAD).Trim()
+          if ($currentHead -ne $env:GITHUB_SHA) { throw 'Repository changed during cleanup; stopped without changing its tree' }
+          git read-tree --empty
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to prepare empty tree' }
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit --allow-empty -m 'Clear current files at owner request; pause publishing'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to commit empty tree' }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to clear current repository tree' }
+      - name: Verify cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $treeSha = (& git rev-parse 'HEAD^{tree}').Trim()
+          $fileCount = gh api "repos/$env:GITHUB_REPOSITORY/git/trees/$treeSha" --jq '.tree | length'
+          if ($LASTEXITCODE -ne 0 -or [int]$fileCount -ne 0) { throw 'Current repository tree is not empty' }
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases" --jq 'length'
+          if ($LASTEXITCODE -ne 0 -or [int]$releases -ne 0) { throw 'Published releases remain' }
+          $tags = gh api "repos/$env:GITHUB_REPOSITORY/tags" --jq 'length'
+          if ($LASTEXITCODE -ne 0 -or [int]$tags -ne 0) { throw 'Tags remain' }
+          Write-Host 'Verified: empty current tree, zero published releases, zero tags. Local files were not accessed.'
+
