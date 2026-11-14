@@ -20,7 +20,9 @@ class WorkflowTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.folder = Path(self.temp.name)
+        # Windows runners may expose TEMP through an 8.3 alias such as
+        # RUNNER~1; use the same canonical path as the production exporter.
+        self.folder = Path(self.temp.name).resolve()
         self.settings = Settings(deepseek=True, translate=True, deepseek_key="private-key", soniox_key="other-key")
 
     def job(self, settings=None, count=3):
