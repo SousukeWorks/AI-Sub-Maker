@@ -3,10 +3,13 @@ import json
 from urllib.parse import urlsplit
 
 
-def request_processing(items, tasks, settings, cancel, context=None, *, conversation=None, lyrics=None):
+def request_processing(items, tasks, settings, cancel, context=None, *, conversation=None, lyrics=None, stage_lyrics=None):
     from engine import endpoint, post_json
     from member_terms import member_reference, PROMPT
+    from lyric_context import stage_reference, describe_reference
     members = member_reference(settings)
+    full_lyrics = stage_lyrics if stage_lyrics is not None else stage_reference(settings)
+    lyric_summary = describe_reference(full_lyrics)
 
     url = endpoint(settings.deepseek_url, "chat/completions")
     data = [{"id": index, "text": cue.text, "tasks": tasks[index]} for index, cue in items]
@@ -35,9 +38,19 @@ def request_processing(items, tasks, settings, cancel, context=None, *, conversa
         '只翻译当前语段对应的内容，不把整段发言的译文重复塞进某一个 id。'
         '从句可以保留从句形式，不要为每条硬加句号；日语、中文均逐条对应各自 id。')
     body['messages'][0]['content'] += ('lyric_reference 是用户歌词库中已匹配的本条歌词，japanese 必须原样采用其 japanese；'
+        'lyric_reference.chinese 非空时，它是用户指定译词，chinese 必须原样采用，不另行改译；'
         '翻译歌词保持连贯，不将 MC 改成歌词，不补写未匹配的歌词。所有输出字符串必须正确转义双引号、反斜杠和换行。'
         '省略说明和多余空白，以紧凑 JSON 输出。不得在字幕前添加标点符号。')
     body['temperature'] = .1
+    if lyric_summary['songs_with_lyrics']:
+        payload = json.loads(body['messages'][1]['content'])
+        payload['stage_lyrics'] = full_lyrics
+        body['messages'][1]['content'] = json.dumps(payload, ensure_ascii=False)
+        body['messages'][0]['content'] += ('stage_lyrics 是用户按公演曲目顺序提供的完整日语歌词，包括 RAP、重复段落及原行顺序。'
+            '其中 chinese_by_line 按日文有效行逐行对应，非空项为用户指定译词，空项才需要翻译；优先保留指定译词。'
+            '将其作为校对和翻译参考，识别当前语段对应的歌词，修正明显误识别；'
+            '不能补写未唱内容，不能把 MC 改成歌词，不能把整首歌塞进一条。'
+            '歌词已按语义分为显示语段，每个 id 只返回该语段的日语和中文，保持前后连贯。')
     if members:
         payload = json.loads(body['messages'][1]['content'])
         payload['member_glossary'] = members
@@ -63,6 +76,7 @@ def request_processing(items, tasks, settings, cancel, context=None, *, conversa
                                      'member_count': len(members['members']) if members else 0,
                                      'term_count': len(members.get('terms', [])) if members else 0})
         result.member_glossary = members
+        result.metadata['stage_lyrics_summary'] = lyric_summary
         return result
     except (KeyError, IndexError, TypeError):
         raise ValueError("API 返回格式错误，缺少完整的字幕结果") from None

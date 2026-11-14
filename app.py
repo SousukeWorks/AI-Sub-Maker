@@ -20,7 +20,7 @@ from ui import ScrollArea
 from retry_ui import RetryPanel
 from subtitle_jobs import ProcessingIncomplete, load_job, process_job, record_path, redact_error
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 
 class App(tk.Tk):
@@ -174,7 +174,7 @@ class App(tk.Tk):
         ttk.Label(recognition, text="按标点分段；缺少标点时，结合语法、语段空格和实际停顿识别问答、句末及从句。词尾保留，时间取自原生词时间戳；分段后整批校对翻译，不按秒数或字数硬切。", style="Hint.TLabel", wraplength=780).grid(row=11, column=0, columnspan=2, sticky='w', pady=5)
         self.soniox_context_button = ttk.Checkbutton(recognition, text='发送歌词和词库作为识别上下文', variable=self.vars['soniox_send_context'])
         self.soniox_context_button.grid(row=12, column=0, columnspan=2, sticky='w', pady=5)
-        ttk.Label(recognition, text='新识别会向 Soniox 提供所选公演的歌名、歌词摘录、英文词，以及已启用的日文人名、昵称和专有词。\n较长资料按容量选取，日志显示实际发送数量；这是识别辅助，仍需后续校对。', style='Hint.TLabel', wraplength=780).grid(row=13, column=0, columnspan=2, sticky='w', pady=5)
+        ttk.Label(recognition, text='新识别按公演顺序发送完整日文歌词，保留 RAP、重复段落，并提供歌名、英文词和日文词库。\n不抽样或截断；Soniox 上限为 8000 tokens，服务端若拒绝超限会报错。DeepSeek 同样收到完整歌词。', style='Hint.TLabel', wraplength=780).grid(row=13, column=0, columnspan=2, sticky='w', pady=5)
 
         ttk.Checkbutton(correction, text="生成日中双语 ASS（DeepSeek 翻译）", variable=self.vars["translate"]).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
         ttk.Checkbutton(correction, text="同时校正日语错字和标点", variable=self.vars["deepseek"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 8))

@@ -109,6 +109,8 @@ def smoke_test(report: Path):
             results['punctuation_clauses_and_bilingual_timing'] = run_punctuation_check(folder)
             from utterance_checks import run_utterance_check
             results['missing_punctuation_and_bilingual_timing'] = run_utterance_check(folder)
+            from phrase_checks import run_phrase_check
+            results['readable_phrases_and_complete_lyrics'] = run_phrase_check(folder)
             from member_color_checks import run_member_color_check
             results['member_and_chorus_colors'] = run_member_color_check(folder)
             from lyric_checks import run_lyric_check

@@ -290,7 +290,16 @@ def process_job(path: Path, settings, cue_ids=None, mode="auto", *, cancel=None,
                     from sentence_context import conversation_context
                     conversation = conversation_context(document["cues"], tasks, maximum=settings.continuation_pause)
                     references = {row['id']: row['lyric'] for row in batch if row.get('lyric')}
-                    content = request_processing(items, tasks, settings, cancel, context, conversation=conversation, lyrics=references)
+                    from lyric_context import stage_reference, describe_reference
+                    full_lyrics = stage_reference(settings)
+                    lyric_summary = describe_reference(full_lyrics)
+                    if lyric_summary['songs_with_lyrics']:
+                        lyric_path = path.with_name(path.stem + '.deepseek-lyrics.json')
+                        atomic_write(lyric_path, json.dumps({'schema': 1, 'summary': lyric_summary, 'stage_lyrics': full_lyrics}, ensure_ascii=False, indent=2))
+                        document['deepseek_lyrics_context'] = lyric_path.name
+                        checkpoint()
+                        log(f"DeepSeek 完整歌词：{lyric_summary['stage']}，{lyric_summary['songs_with_lyrics']} 首、{lyric_summary['lines']} 行；保留 RAP 与重复段落，按公演顺序一次发送。快照：{lyric_path}")
+                    content = request_processing(items, tasks, settings, cancel, context, conversation=conversation, lyrics=references, stage_lyrics=full_lyrics)
                     identity_reference = getattr(content, 'member_glossary', identity_reference)
                     # Save the returned text and essential completion metadata
                     # BEFORE parsing. No headers, URLs, keys or request prompts.

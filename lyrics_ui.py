@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
-from lyrics import library_path, load_library, lyric_lines, save_library
+from lyrics import library_path, load_library, lyric_lines, save_library, chinese_lines
 from ui import ScrollArea
 
 
@@ -97,7 +97,8 @@ class LyricsEditor(tk.Toplevel):
     def capture(self):
         if self.active_song:
             for key, widget in self.texts.items():
-                self.active_song[key] = widget.get('1.0', 'end').strip()
+                value = widget.get('1.0', 'end-1c')
+                self.active_song[key] = value if key == 'chinese' and self.active_song.get('chinese_partial') else value.strip()
 
     def current_stage(self):
         return next((stage for stage in self.document['stages'] if stage['id'] == self.stage_id), None)
@@ -145,14 +146,15 @@ class LyricsEditor(tk.Toplevel):
         for key, text in self.texts.items():
             text.delete('1.0', 'end')
             text.insert('1.0', song.get(key, '') if song else '')
-        self.summary.set('连续多行可靠匹配才采用歌词；未匹配内容保留原文。LRC 时间只用于去除标签，不作为本场公演的时间轴。')
+        self.summary.set('此曲为部分中文：空行对应尚未提供的日文行，生成时交给 DeepSeek 翻译；请保留空行位置。'
+                         if song and song.get('chinese_partial') else '连续多行可靠匹配才采用歌词；未匹配内容保留原文。LRC 时间只用于去除标签，不作为本场公演的时间轴。')
 
     def save(self):
         try:
             self.capture()
             for stage in self.document['stages']:
                 for song in stage['songs']:
-                    ja, zh = lyric_lines(song.get('japanese', '')), lyric_lines(song.get('chinese', ''))
+                    ja, zh = lyric_lines(song.get('japanese', '')), chinese_lines(song)
                     if zh and len(ja) != len(zh):
                         raise ValueError(f'《{song["title"]}》日文 {len(ja)} 行、中文 {len(zh)} 行，需逐行对应')
             save_library(self.document, self.path)

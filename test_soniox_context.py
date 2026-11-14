@@ -8,7 +8,7 @@ from engine import Settings
 from lyrics import save_library
 from member_catalog import initial_members
 from member_terms import save_library as save_members
-from soniox_context import MAX_CONTEXT_BYTES, build_context, context_size
+from soniox_context import build_context
 
 
 class SonioxContextTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class SonioxContextTests(unittest.TestCase):
                                         {'id': 'other', 'title': '別の曲', 'japanese': 'UNSELECTED_PRIVATE_WORD', 'chinese': ''}]}]}
         save_library(doc, str(self.lyrics))
 
-    def test_all_songs_are_scanned_for_english_before_excerpt_limit(self):
+    def test_all_songs_are_sent_complete_in_original_order(self):
         songs = [{'id': f'song-{i}', 'title': f'曲目{i}',
                   'japanese': '\n'.join(f'これは曲目{i}の歌詞例{j}です。' for j in range(80)), 'chinese': ''}
                  for i in range(18)]
@@ -36,9 +36,11 @@ class SonioxContextTests(unittest.TestCase):
         context, summary = build_context(self.settings)
         self.assertIn('Maybe', context['terms'])
         self.assertTrue(all(song['title'] in context['terms'] for song in songs))
-        self.assertLessEqual(context_size(context), MAX_CONTEXT_BYTES)
-        self.assertTrue(summary['lyrics_sampled'])
-        self.assertGreaterEqual(context['text'].count('[曲目'), 18)
+        self.assertFalse(summary['lyrics_sampled'])
+        self.assertTrue(summary['lyrics_complete'])
+        for index, song in enumerate(songs):
+            self.assertIn(f'[{index+1:02d} {song["title"]}]', context['text'])
+            self.assertIn(song['japanese'], context['text'])
         self.assertNotIn('UNSELECTED_PRIVATE_WORD', json.dumps(context))
 
     def test_enabled_japanese_names_and_nicknames_only(self):
@@ -73,14 +75,15 @@ class SonioxContextTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_CHINESE', json.dumps(context))
         self.assertNotIn('岩立沙穂', context['terms'])
 
-    def test_context_is_deterministic_and_deduplicates_repeated_lyrics(self):
+    def test_context_is_deterministic_and_preserves_repeated_lyrics(self):
         self.library([{'id': 'song', 'title': 'Test song', 'japanese': 'Maybe\nMaybe\nこれは歌詞の例です', 'chinese': ''}])
         first, summary = build_context(self.settings)
         second, summary2 = build_context(self.settings)
         self.assertEqual(first, second)
         self.assertEqual(summary, summary2)
-        self.assertEqual(summary['lyric_lines_available'], 2)
-        self.assertEqual(summary['lyric_lines_sent'], 2)
+        self.assertEqual(summary['lyric_lines_available'], 3)
+        self.assertEqual(summary['lyric_lines_sent'], 3)
+        self.assertIn('Maybe\nMaybe\nこれは歌詞の例です', first['text'])
         self.assertEqual(first['terms'].count('Maybe'), 1)
 
     def test_gui_http_snapshot_disable_and_cache_without_live_api(self):

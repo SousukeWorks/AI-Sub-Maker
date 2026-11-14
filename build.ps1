@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $pythonPath)) {
 }
 & $pythonPath -m pip install -r requirements-build.txt
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
-& $pythonPath -m unittest -v test_engine test_simplified test_workflow test_soniox test_soniox_context test_image_video test_sentence_context test_complete_sentences test_punctuation test_utterances test_member_colors test_lyrics_response test_members test_wordbook
+& $pythonPath -m unittest -v test_engine test_simplified test_workflow test_soniox test_soniox_context test_image_video test_sentence_context test_complete_sentences test_punctuation test_utterances test_phrases test_member_colors test_lyrics_response test_members test_wordbook
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 & $pythonPath gui_checks.py
 if ($LASTEXITCODE -ne 0) { throw 'DPI layout checks failed.' }

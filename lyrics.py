@@ -46,6 +46,8 @@ def validate_library(document):
             for key in ('japanese', 'chinese'):
                 if not isinstance(song.get(key, ''), str) or len(song.get(key, '')) > 100000:
                     raise ValueError('单曲歌词格式无效或过长')
+            if 'chinese_partial' in song and type(song['chinese_partial']) is not bool:
+                raise ValueError('部分中文歌词标记无效')
     if total > 5000 or len(document['stages']) > 200:
         raise ValueError('歌词库超过 200 套公演或 5000 首曲目的限制')
     return document
@@ -89,15 +91,61 @@ def selected_stage(settings):
     if stage is None:
         raise ValueError('所选公演已不在歌词库中，请重新选择')
     for song in stage['songs']:
-        chinese = lyric_lines(song.get('chinese', ''))
-        if chinese and len(chinese) != len(lyric_lines(song.get('japanese', ''))):
-            raise ValueError(f'《{song["title"]}》中文与日文行数不一致，请在歌词库修正或清空中文')
+        chinese_lines(song)
     return stage
+
+
+def chinese_lines(song):
+    """Optional partial translations use blank rows for untranslated lines."""
+    raw = song.get('chinese', '')
+    if not raw.strip():
+        return []
+    count = len(lyric_lines(song.get('japanese', '')))
+    if song.get('chinese_partial', False):
+        lines = [line.strip() for line in raw.replace('\r\n', '\n').split('\n')]
+        if len(lines) > count and any(lines[count:]):
+            raise ValueError(f'《{song["title"]}》部分中文超过日文行数')
+        return lines[:count] + [''] * max(0, count-len(lines))
+    lines = lyric_lines(raw)
+    if len(lines) != count:
+        raise ValueError(f'《{song["title"]}》中文与日文行数不一致，请在歌词库修正或清空中文')
+    return lines
 
 
 def normalized(text):
     return ''.join(c.casefold() for c in unicodedata.normalize('NFKC', text)
                    if unicodedata.category(c)[0] in 'LN')
+
+
+def display_lines(song):
+    """Keep dependent lyric lines and repeated English refrains together."""
+    from japanese_sentences import words
+    japanese = lyric_lines(song.get('japanese', ''))
+    chinese = chinese_lines(song)
+    groups = []
+    for index, line in enumerate(japanese):
+        previous = groups[-1] if groups else None
+        join = False
+        if previous:
+            before = [w for w in words(previous['japanese']) if w.pos[0] != '記号']
+            following = [w for w in words(line) if w.pos[0] != '記号']
+            same_english = (re.fullmatch(r"[A-Za-z][A-Za-z'-]*", line) and
+                            all(part.casefold() == line.casefold() for part in previous['japanese'].split()))
+            hanging = (before and before[-1].pos[0] == '助詞' and
+                       before[-1].surface in {'は', 'が', 'を', 'に', 'へ', 'の'})
+            quoted_predicate = (before and before[-1].surface == 'と' and len(before) > 1
+                                and any(w.pos[0] in {'動詞', '形容詞', '助動詞'} for w in before[:-1])
+                                and following and following[0].pos[0] == '動詞')
+            join = same_english or hanging or quoted_predicate
+        if join:
+            previous['japanese'] += ' ' + line
+            previous['chinese'] = (previous['chinese'] + ' ' + chinese[index]
+                                   if previous['chinese'] and chinese and chinese[index] else '')
+            previous['line_end'] = index + 1
+        else:
+            groups.append({'line': index + 1, 'line_end': index + 1, 'japanese': line,
+                           'chinese': chinese[index] if chinese else ''})
+    return groups
 
 
 def find_matches(units, stage):
@@ -127,10 +175,11 @@ def find_matches(units, stage):
     candidates = []
     for song in stage['songs']:
         japanese = lyric_lines(song.get('japanese', ''))
-        chinese = lyric_lines(song.get('chinese', ''))
+        chinese = chinese_lines(song)
         if chinese and len(chinese) != len(japanese):
             raise ValueError(f'《{song["title"]}》中文与日文行数不一致，请在歌词库修正或清空中文')
-        for line_index, text in enumerate(japanese):
+        for display in display_lines(song):
+            text = display['japanese']
             query = normalized(text)
             if not 4 <= len(query) <= 120:
                 continue
@@ -165,8 +214,8 @@ def find_matches(units, stage):
                         if any(units[k]['start'] - units[k - 1]['end'] > 2.0 for k in range(a + 1, b + 1)):
                             continue
                         entry = dict(first=a, last=b, start=units[a]['start'], end=units[b]['end'],
-                                     score=ratio, japanese=text, chinese=chinese[line_index] if chinese else '',
-                                     song=song['title'], song_id=song['id'], line=line_index + 1,
+                                     score=ratio, japanese=text, chinese=display['chinese'],
+                                     song=song['title'], song_id=song['id'], line=display['line'], line_end=display['line_end'],
                                      stage=stage['name'], stage_id=stage['id'])
                         if best is None or (ratio, -abs(len(query) - len(value))) > (best['score'], -best['_delta']):
                             best = {**entry, '_delta': abs(len(query) - len(value))}
@@ -174,16 +223,18 @@ def find_matches(units, stage):
                         seen.add((best['first'], best['last']))
                         candidates.append(best)
     supported = set()
+    support_votes = Counter()
     by_line = defaultdict(list)
     for index, row in enumerate(candidates):
         by_line[row['song_id'], row['line']].append((index, row))
     for index, row in enumerate(candidates):
-        for next_index, following in by_line.get((row['song_id'], row['line'] + 1), []):
+        for next_index, following in by_line.get((row['song_id'], row['line_end'] + 1), []):
             if (row['last'] < following['first'] and -.05 <= following['start'] - row['end'] <= 12
                     and len(normalized(row['japanese'])) + len(normalized(following['japanese'])) >= 18):
                 supported.update((index, next_index))
+                support_votes.update((index, next_index))
     accepted, occupied = [], set()
-    for index in sorted(supported, key=lambda i: (-candidates[i]['score'], candidates[i]['first'])):
+    for index in sorted(supported, key=lambda i: (-candidates[i]['score'], -support_votes[i], candidates[i]['first'])):
         row = candidates[index]
         indices = set(range(row['first'], row['last'] + 1))
         if indices & occupied:
@@ -223,7 +274,7 @@ def apply_to_tokens(payload, duration, settings, *, cancel=None):
         remaining(cursor, match['first'])
         span = tokens[match['first']:match['last'] + 1]
         speakers = {str(token.get('speaker', '')) for token in span if token.get('speaker') is not None}
-        reference = {key: match[key] for key in ('stage', 'stage_id', 'song', 'song_id', 'line', 'japanese', 'chinese', 'score')}
+        reference = {key: match[key] for key in ('stage', 'stage_id', 'song', 'song_id', 'line', 'line_end', 'japanese', 'chinese', 'score')}
         cues.append(Cue(match['start'], match['end'], clean_start(match['japanese']),
                         speaker=next(iter(speakers)) if len(speakers) == 1 else '', lyric=reference))
         trusted[id(cues[-1])] = all(token.get('speaker') not in (None, '') for token in span if token['text'].strip())
@@ -234,7 +285,8 @@ def apply_to_tokens(payload, duration, settings, *, cancel=None):
     ordered = sorted(cues, key=lambda cue: (cue.start, cue.end))
     cues, sentence_joins = join_cues(ordered, known_speakers=[trusted[id(c)] for c in ordered])
     return cues, {
-        'schema': 1, 'stage': stage['name'], 'matched_lines': len(matches), 'matches': matches,
+        'schema': 1, 'stage': stage['name'], 'matched_lines': sum(m['line_end'] - m['line'] + 1 for m in matches),
+        'matched_display_units': len(matches), 'matches': matches,
         'songs_with_lyrics': sum(bool(lyric_lines(song.get('japanese', ''))) for song in stage['songs']),
         'sentence_joins': sentence_joins, 'sentence_join_count': len(sentence_joins),
         'note': '仅连续多行高匹配度内容替换为歌词；边界取自原生 token。未匹配部分保留识别文字，不补写漏唱歌词。'}

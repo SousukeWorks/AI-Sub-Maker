@@ -191,7 +191,6 @@ def run_soniox_context_check(folder):
     from member_catalog import initial_members
     from member_terms import save_library as save_members
     from soniox_asr import transcribe
-    from soniox_context import MAX_CONTEXT_BYTES, context_size
 
     folder = folder.resolve()
     library, members = folder / 'context-lyrics.json', folder / 'context-members.json'
@@ -229,7 +228,7 @@ def run_soniox_context_check(folder):
         assert len(requests) == 1
         context = requests[0]['context']
         assert 'Maybe' in context['terms'] and '岩立沙穂' in context['terms'] and 'さっほー' in context['terms']
-        assert 'これは歌詞の例です' in context['text'] and context_size(context) <= MAX_CONTEXT_BYTES
+        assert lyric_data['stages'][0]['songs'][0]['japanese'] in context['text']
         state_path = target.with_suffix('.soniox.json')
         state = json.loads(state_path.read_text('utf-8-sig'))
         assert state['recognition_context'] == context
@@ -249,4 +248,4 @@ def run_soniox_context_check(folder):
         assert len(requests) == 2 and 'context' not in requests[-1]
     return {'context_sent_in_paid_request': True, 'stage_lyrics_and_wordbook': True,
             'gui_toggle_to_http': True, 'saved_snapshot_matches_request': True,
-            'bounded_context': True, 'no_automatic_paid_resubmission': True, 'disable_omits_context': True}
+            'complete_ordered_context': True, 'no_automatic_paid_resubmission': True, 'disable_omits_context': True}

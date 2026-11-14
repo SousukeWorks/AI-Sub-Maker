@@ -34,8 +34,7 @@ class UtteranceTests(unittest.TestCase):
         for text in ('この話でいいですか', '晴れなんですけど', '駅へ行きますよね'):
             with self.subTest(text=text):
                 payload, duration = fixture([text, 'ありがとうございます'], blanks=False)
-                expected = [text + 'ありがとうございます'] if text.endswith('けど') else [text, 'ありがとうございます']
-                self.assertEqual([c.text for c in parse_tokens(payload, duration)], expected)
+                self.assertEqual([c.text for c in parse_tokens(payload, duration)], [text, 'ありがとうございます'])
 
     def test_spaces_do_not_separate_dependent_tails_or_attributive_phrases(self):
         for parts in (['青い空を見上げて', 'うれしい気持ちになる。'],

@@ -37,6 +37,8 @@ def main():
     def include(path):
         if not path.is_file() or path.name in {"soniox-key.dpapi", "lyrics-library.json", "member-library.json"}:
             return False
+        if path.suffix.lower() == '.json' and path.name.startswith(('lyrics-library', 'member-library')):
+            return False
         return True
     entries = pack(binary, [p for p in folder.rglob("*") if include(p)], release)
     source = dist / f"AI-Sub-Maker-{VERSION}-source.zip"

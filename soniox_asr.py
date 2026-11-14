@@ -90,7 +90,8 @@ class Client:
             if method == "DELETE" and response.status_code in (200, 204, 404):
                 return {}
             if response.status_code not in (200, 201):
-                hint = {401: "Key 无效，请检查 Key 和项目区域对应的 Base URL",
+                hint = {400: "请求参数无效，请核对模型与参数；Soniox 上下文最多 8000 tokens，完整歌词超限会被拒绝，程序没有截断或自动重试",
+                        401: "Key 无效，请检查 Key 和项目区域对应的 Base URL",
                         402: "余额不足，请在 Soniox 控制台充值后继续",
                         403: "无权访问，请检查项目权限与区域",
                         404: "文件、任务或模型不存在，请检查控制台",
