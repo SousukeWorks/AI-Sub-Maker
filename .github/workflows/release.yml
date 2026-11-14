@@ -17,9 +17,6 @@ jobs:
   release:
     runs-on: windows-latest
     timeout-minutes: 30
-    env:
-      TEMP: ${{ runner.temp }}
-      TMP: ${{ runner.temp }}
     permissions:
       contents: write
     defaults:
@@ -34,6 +31,9 @@ jobs:
           python-version: '3.12'
           architecture: x64
       - name: Build and test the portable application
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         run: |
           python -m venv .venv
           if ($LASTEXITCODE -ne 0) { throw 'Virtual environment creation failed' }
