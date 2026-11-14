@@ -2,6 +2,8 @@
 
 版本：1.0.0
 
+[下载 Windows 便携版](https://github.com/SousukeWorks/AI-Sub-Maker/releases/latest)：选择 `Windows11-x64.zip`，完整解压后运行 `AI-Sub-Maker.exe`，保留旁边的 `_internal` 文件夹。
+
 Windows 11 日语字幕工具：用 **Soniox** 识别音视频并获取时间轴，用 **DeepSeek** 整批校对、翻译，生成上日语、下简体中文的 ASS 字幕。
 
 Soniox 和 DeepSeek 需自行提供 API Key，并按各自服务收费。无需下载语音模型。
