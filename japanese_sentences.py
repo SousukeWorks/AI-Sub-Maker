@@ -44,7 +44,7 @@ def reply(text):
     return body(text) in _REPLIES
 
 
-def dependency(left, right):
+def dependency(left, right, *, separated=False):
     """Return why the next phrase depends on the previous phrase, if it does."""
     right = right.lstrip(' 」』）)]”')
     if not right or reply(right):
@@ -52,7 +52,7 @@ def dependency(left, right):
     prefix = body(left)
     # A token straddling the boundary is direct evidence of a split word.
     offset, contextual = 0, None
-    for word in words(prefix + right):
+    for word in words(prefix + (' ' if separated else '') + right):
         end = offset + len(word.surface)
         if offset < len(prefix) < end and word.pos[0] != '記号':
             return '同一个词被切开'
@@ -61,6 +61,10 @@ def dependency(left, right):
             break
         offset = end
     following = contextual or next((w for w in words(right) if w.pos[0] != '記号'), None)
+    if separated:
+        from punctuation_segments import tail_only
+        if tail_only(right.split()[0]):
+            return '空格后的词尾依附前文'
     if following and (following.pos[0] in {'助詞', '助動詞'}
                       or following.pos[1] in {'非自立', '接尾'}):
         return '助词、助动词或非独立词依附前文'
@@ -79,12 +83,15 @@ def complete(text):
         return False
     if reply(text):
         return True
+    if re.search(r'(?:ありがとう(?:ございました|ございます)?|おめでとう(?:ございます)?|大好き|最高|お疲れ(?:さま|様)(?:でした|です)?)$',
+                 re.sub(r'\s+', '', body(text))):
+        return True
     tokens = [w for w in words(body(text)) if w.pos[0] != '記号']
     if not tokens:
         return False
     last = tokens[-1]
-    return (last.pos[0] in {'動詞', '形容詞', '助動詞'} and last.form in {'基本形', '命令ｅ', '命令ｒｏ'}
-            or last.pos[:2] == ('助詞', '終助詞'))
+    return (last.pos[0] in {'動詞', '形容詞', '助動詞'} and (last.form == '基本形' or last.form.startswith('命令'))
+            or last.pos[0] == '助詞' and '終助詞' in last.pos[1])
 
 
 def pause_boundary(left, right):

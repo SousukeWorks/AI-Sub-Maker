@@ -180,7 +180,8 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
             gap = start - group[-1]['end']
             same_known = speaker_known and group[-1].get('speaker_known') and speaker == group[-1]['speaker']
             split = speaker != group[-1]['speaker']
-            if gap > .45:
+            punctuation_only = text.strip() and all(c in '、。，．！？!?…」』）)]\"\'' for c in text.strip())
+            if gap > .45 and not punctuation_only:
                 if natural_sentences and same_known:
                     preview = ''
                     for following in tokens[index:]:
@@ -207,7 +208,13 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
     flush()
 
     def bounds(rows):
-        return min(r["start"] for r in rows), max(r["end"] for r in rows)
+        from text_cleanup import has_words
+        audible = [row for row in rows if row['text'].strip()] or rows
+        spoken = [row for row in audible if has_words(row['text'])]
+        if spoken:
+            last_word = max(row['end'] for row in spoken)
+            audible = [row for row in audible if row['start'] <= last_word + .45]
+        return min(r["start"] for r in audible), max(r["end"] for r in audible)
 
     # Resolve punctuation-delimited point fragments before creating positive cues.
     merged = []
@@ -244,15 +251,24 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
                 continue
         attached.append(rows)
     from punctuation_segments import split_rows
+    from utterance_segments import split_rows as split_utterances
     sentence_count, clause_splits, merged = len(attached), [], []
+    natural_splits = []
     for rows in attached:
         parts = split_rows(rows)
+        if natural_sentences:
+            expanded = []
+            for part in parts:
+                units, reasons = split_utterances(part)
+                expanded.extend(units)
+                natural_splits.extend(reasons)
+            parts = expanded
         merged.extend(parts)
         if len(parts) > 1:
             clause_splits.append({'before': ''.join(r['text'] for r in rows).strip(),
                                  'parts': [{'text': ''.join(r['text'] for r in part).strip(),
-                                            'start': min(r['start'] for r in part),
-                                            'end': max(r['end'] for r in part),
+                                            'start': bounds(part)[0],
+                                            'end': bounds(part)[1],
                                             'token_indices': [r['index'] for r in part]} for part in parts]})
     parsed = []
     from text_cleanup import clean_start, has_words
@@ -286,7 +302,8 @@ def parse_tokens(payload, duration, *, report=None, natural_sentences=True, cont
                       continuation_pause=continuation_pause, continued_pauses=continued_pauses,
                       continued_pause_count=len(continued_pauses), punctuation_only_removed=dropped_punctuation,
                       suffix_repairs=suffix_repairs, suffix_repair_count=len(suffix_repairs),
-                      length_limits=None, boundary_method='japanese_sentence_then_punctuation_clauses',
+                      length_limits=None, boundary_method='japanese_grammar_spacing_pauses_and_punctuation',
+                      natural_split_count=len(natural_splits), natural_splits=natural_splits,
                       source_sentence_count=sentence_count, clause_split_count=len(clause_splits),
                       clause_splits=clause_splits,
                       sentences=[{'start': cue.start, 'end': cue.end, 'text': cue.text, 'speaker': cue.speaker,
